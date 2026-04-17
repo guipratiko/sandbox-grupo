@@ -10,9 +10,10 @@ npm install
 npm run dev
 ```
 
-- Saúde: `GET http://localhost:4334/`
-- Grupos (esqueleto): `GET http://localhost:4334/groups?instanceName=NOME`
-- Interno: `GET http://localhost:4334/internal/ping` com header `x-internal-key` igual a `GRUPO_FLOW_INTERNAL_KEY` (ou `JWT_SECRET`).
+- Saúde (raiz): `GET http://localhost:4334/`
+- API (consumida pelo proxy do backend): prefixo **`/api/grupo-flow`**
+  - Grupos (esqueleto): `GET http://localhost:4334/api/grupo-flow/groups?instanceName=NOME`
+  - Interno: `GET http://localhost:4334/api/grupo-flow/internal/ping` com header `x-internal-key` igual a `GRUPO_FLOW_INTERNAL_KEY`.
 
 ## Build
 
@@ -23,4 +24,4 @@ npm start
 
 ## Integração com o Backend OnlyFlow
 
-Configure no `.env` do Backend a URL deste serviço (ex.: `GROUP_SERVICE_URL` ou variável que o projeto usar ao reativar o proxy) e o mesmo segredo interno.
+No `.env` do Backend: `GRUPO_FLOW_SERVICE_URL=https://seu-host` (sem barra no fim) e `GRUPO_FLOW_INTERNAL_KEY` igual ao deste microserviço (ou use só `JWT_SECRET` nos dois lados). O OnlyFlow expõe `GET/POST /api/grupo-flow/...` autenticado e faz proxy para `GRUPO_FLOW_SERVICE_URL/api/grupo-flow/...`.

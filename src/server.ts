@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Router } from 'express';
 import cors from 'cors';
 import { env } from './config/env';
 import healthRoutes from './routes/health';
@@ -51,9 +51,16 @@ app.use(
   })
 );
 
+/** Rotas consumidas pelo proxy do Backend OnlyFlow: /api/grupo-flow/* */
+const grupoFlowApi = Router();
+grupoFlowApi.use('/groups', groupsRoutes);
+grupoFlowApi.use('/internal', internalRoutes);
+
+const apiRouter = Router();
+apiRouter.use('/grupo-flow', grupoFlowApi);
+
+app.use('/api', apiRouter);
 app.use('/', healthRoutes);
-app.use('/groups', groupsRoutes);
-app.use('/internal', internalRoutes);
 
 app.use(errorHandler);
 
