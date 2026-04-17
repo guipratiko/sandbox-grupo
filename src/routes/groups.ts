@@ -96,6 +96,26 @@ router.get('/:groupJid/participants', async (req, res) => {
   }
 });
 
+/** POST /groups/:groupJid/send-text?instanceName= — body: text, mentionsEveryOne? */
+router.post('/:groupJid/send-text', async (req, res) => {
+  try {
+    const instanceName = instanceNameFrom(req);
+    const groupJid = decodeURIComponent(req.params.groupJid);
+    const { text, mentionsEveryOne } = req.body as { text?: string; mentionsEveryOne?: boolean };
+    if (!instanceName || !groupJid || !text?.trim()) {
+      res.status(400).json({ status: 'error', message: 'instanceName, groupJid e text são obrigatórios.' });
+      return;
+    }
+    const data = await Evo.sendGroupText(instanceName, groupJid, {
+      text: text.trim(),
+      mentionsEveryOne: mentionsEveryOne === true,
+    });
+    res.json({ status: 'success', data });
+  } catch (e) {
+    sendEvolutionError(res, e);
+  }
+});
+
 /** GET /groups/:groupJid/invite?instanceName= */
 router.get('/:groupJid/invite', async (req, res) => {
   try {

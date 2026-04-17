@@ -166,3 +166,19 @@ export async function leaveGroup(instanceName: string, groupJid: string): Promis
   assertOk(res, 'leaveGroup');
   return res.data;
 }
+
+/** Texto no grupo (ex.: mencionar todos). Evolution: POST /message/sendText/:instance */
+export async function sendGroupText(
+  instanceName: string,
+  groupJid: string,
+  body: { text: string; mentionsEveryOne?: boolean }
+): Promise<unknown> {
+  const client = getClient();
+  const res = await client.post(`/message/sendText/${encodeURIComponent(instanceName)}`, {
+    number: groupJid,
+    text: body.text,
+    mentionsEveryOne: body.mentionsEveryOne === true,
+  });
+  assertOk(res, 'sendGroupText');
+  return res.data;
+}
