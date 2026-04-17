@@ -100,11 +100,29 @@ export async function updateGroupDescription(
   return res.data;
 }
 
+/**
+ * A Evolution (Baileys) usa `isBase64()` do class-validator: `data:image/...;base64,...`
+ * não é aceito como base64 e cai em erro interno (500). Aqui enviamos URL http(s) ou só o payload base64.
+ */
+function normalizeImageForEvolutionGroupPicture(image: string): string {
+  const s = String(image ?? '').trim();
+  if (!s) return s;
+  const dataUrl = /^data:[^;]+;base64,(.+)$/is.exec(s);
+  if (dataUrl?.[1]) {
+    return dataUrl[1].replace(/\s/g, '');
+  }
+  if (/^https?:\/\//i.test(s)) {
+    return s;
+  }
+  return s.replace(/\s/g, '');
+}
+
 export async function updateGroupPicture(instanceName: string, groupJid: string, image: string): Promise<unknown> {
   const client = getClient();
+  const normalized = normalizeImageForEvolutionGroupPicture(image);
   const res = await client.post(
     `/group/updateGroupPicture/${encodeURIComponent(instanceName)}?groupJid=${encodeURIComponent(groupJid)}`,
-    { image }
+    { groupJid, image: normalized }
   );
   assertOk(res, 'updateGroupPicture');
   return res.data;
