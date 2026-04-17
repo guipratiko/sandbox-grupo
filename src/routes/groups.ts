@@ -17,6 +17,15 @@ function sendEvolutionError(res: Response, err: unknown): void {
   res.status(status >= 400 && status < 600 ? status : 500).json({ status: 'error', message });
 }
 
+/** 10–11 dígitos sem DDI → 55 (Brasil), alinhado ao disparo em massa / frontend. */
+function ensureParticipantDdiDigits(digits: string): string | null {
+  const d = digits.replace(/\D/g, '');
+  if (!d) return null;
+  if (d.length >= 12 && d.length <= 15) return d;
+  if (d.length === 10 || d.length === 11) return `55${d}`;
+  return null;
+}
+
 /** Evolution v2: participantes como array de strings só com DDI+número (ex.: 5511999999999), sem @. */
 function normalizeCreateGroupParticipants(input: unknown[]): string[] {
   const out: string[] = [];
@@ -26,11 +35,13 @@ function normalizeCreateGroupParticipants(input: unknown[]): string[] {
     if (s.includes('@g.us')) continue;
     if (s.includes('@s.whatsapp.net') || s.includes('@c.us')) {
       const digits = s.split('@')[0].replace(/\D/g, '');
-      if (digits.length >= 10 && digits.length <= 15) out.push(digits);
+      const n = ensureParticipantDdiDigits(digits);
+      if (n) out.push(n);
       continue;
     }
     const digits = s.replace(/\D/g, '');
-    if (digits.length >= 10 && digits.length <= 15) out.push(digits);
+    const n = ensureParticipantDdiDigits(digits);
+    if (n) out.push(n);
   }
   return [...new Set(out)];
 }
