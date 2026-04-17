@@ -200,3 +200,95 @@ export async function sendGroupText(
   assertOk(res, 'sendGroupText');
   return res.data;
 }
+
+/** Imagem / vídeo / documento no grupo — POST /message/sendMedia/:instance */
+export async function sendGroupMedia(
+  instanceName: string,
+  groupJid: string,
+  body: { mediatype: 'image' | 'video' | 'document'; media: string; caption?: string; fileName?: string }
+): Promise<unknown> {
+  const client = getClient();
+  const payload: Record<string, unknown> = {
+    number: groupJid,
+    mediatype: body.mediatype,
+    media: body.media,
+    caption: body.caption?.trim() ? body.caption.trim() : '',
+  };
+  if (body.fileName?.trim()) payload.fileName = body.fileName.trim();
+  const res = await client.post(`/message/sendMedia/${encodeURIComponent(instanceName)}`, payload);
+  assertOk(res, 'sendGroupMedia');
+  return res.data;
+}
+
+/** Áudio (PTT) no grupo — POST /message/sendWhatsAppAudio/:instance */
+export async function sendGroupWhatsAppAudio(instanceName: string, groupJid: string, audioUrl: string): Promise<unknown> {
+  const client = getClient();
+  const res = await client.post(`/message/sendWhatsAppAudio/${encodeURIComponent(instanceName)}`, {
+    number: groupJid,
+    audio: audioUrl.trim(),
+  });
+  assertOk(res, 'sendGroupWhatsAppAudio');
+  return res.data;
+}
+
+/** Localização no grupo — POST /message/sendLocation/:instance */
+export async function sendGroupLocation(
+  instanceName: string,
+  groupJid: string,
+  body: { latitude: number; longitude: number; name?: string; address?: string }
+): Promise<unknown> {
+  const client = getClient();
+  const res = await client.post(`/message/sendLocation/${encodeURIComponent(instanceName)}`, {
+    number: groupJid,
+    name: body.name?.trim() || '',
+    address: body.address?.trim() || '',
+    latitude: body.latitude,
+    longitude: body.longitude,
+  });
+  assertOk(res, 'sendGroupLocation');
+  return res.data;
+}
+
+/** Enquete no grupo — POST /message/sendPoll/:instance */
+export async function sendGroupPoll(
+  instanceName: string,
+  groupJid: string,
+  body: { name: string; values: string[]; selectableCount?: number }
+): Promise<unknown> {
+  const client = getClient();
+  const res = await client.post(`/message/sendPoll/${encodeURIComponent(instanceName)}`, {
+    number: groupJid,
+    name: body.name.trim(),
+    values: body.values.map((v) => v.trim()).filter(Boolean),
+    selectableCount: typeof body.selectableCount === 'number' && body.selectableCount > 0 ? body.selectableCount : 1,
+  });
+  assertOk(res, 'sendGroupPoll');
+  return res.data;
+}
+
+export type GroupSendContactEntry = {
+  fullName: string;
+  wuid: string;
+  phoneNumber: string;
+  organization?: string;
+  email?: string;
+  url?: string;
+};
+
+/** Cartão de contato no grupo — POST /message/sendContact/:instance */
+export async function sendGroupContact(instanceName: string, groupJid: string, contact: GroupSendContactEntry[]): Promise<unknown> {
+  const client = getClient();
+  const res = await client.post(`/message/sendContact/${encodeURIComponent(instanceName)}`, {
+    number: groupJid,
+    contact: contact.map((c) => ({
+      fullName: c.fullName.trim(),
+      wuid: String(c.wuid).replace(/\D/g, ''),
+      phoneNumber: c.phoneNumber.trim(),
+      organization: (c.organization ?? '').trim(),
+      email: (c.email ?? '').trim(),
+      url: (c.url ?? '').trim(),
+    })),
+  });
+  assertOk(res, 'sendGroupContact');
+  return res.data;
+}

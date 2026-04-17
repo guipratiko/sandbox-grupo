@@ -160,6 +160,129 @@ router.post('/:groupJid/send-text', async (req, res) => {
   }
 });
 
+/** POST /groups/:groupJid/send-media — body: mediatype image|video|document, media (URL), caption?, fileName? */
+router.post('/:groupJid/send-media', async (req, res) => {
+  try {
+    const instanceName = instanceNameFrom(req);
+    const groupJid = decodeURIComponent(req.params.groupJid);
+    const { mediatype, media, caption, fileName } = req.body as {
+      mediatype?: string;
+      media?: string;
+      caption?: string;
+      fileName?: string;
+    };
+    if (!instanceName || !groupJid || !media?.trim()) {
+      res.status(400).json({ status: 'error', message: 'instanceName, groupJid e media são obrigatórios.' });
+      return;
+    }
+    const mt = String(mediatype || '').toLowerCase();
+    if (mt !== 'image' && mt !== 'video' && mt !== 'document') {
+      res.status(400).json({ status: 'error', message: 'mediatype deve ser image, video ou document.' });
+      return;
+    }
+    const data = await Evo.sendGroupMedia(instanceName, groupJid, {
+      mediatype: mt,
+      media: media.trim(),
+      caption,
+      fileName,
+    });
+    res.json({ status: 'success', data });
+  } catch (e) {
+    sendEvolutionError(res, e);
+  }
+});
+
+/** POST /groups/:groupJid/send-audio — body: audio (URL ou base64 aceito pela Evolution) */
+router.post('/:groupJid/send-audio', async (req, res) => {
+  try {
+    const instanceName = instanceNameFrom(req);
+    const groupJid = decodeURIComponent(req.params.groupJid);
+    const { audio } = req.body as { audio?: string };
+    if (!instanceName || !groupJid || !audio?.trim()) {
+      res.status(400).json({ status: 'error', message: 'instanceName, groupJid e audio são obrigatórios.' });
+      return;
+    }
+    const data = await Evo.sendGroupWhatsAppAudio(instanceName, groupJid, audio.trim());
+    res.json({ status: 'success', data });
+  } catch (e) {
+    sendEvolutionError(res, e);
+  }
+});
+
+/** POST /groups/:groupJid/send-location — body: latitude, longitude, name?, address? */
+router.post('/:groupJid/send-location', async (req, res) => {
+  try {
+    const instanceName = instanceNameFrom(req);
+    const groupJid = decodeURIComponent(req.params.groupJid);
+    const { latitude, longitude, name, address } = req.body as {
+      latitude?: number;
+      longitude?: number;
+      name?: string;
+      address?: string;
+    };
+    if (!instanceName || !groupJid || typeof latitude !== 'number' || typeof longitude !== 'number') {
+      res.status(400).json({ status: 'error', message: 'instanceName, groupJid, latitude e longitude são obrigatórios.' });
+      return;
+    }
+    const data = await Evo.sendGroupLocation(instanceName, groupJid, {
+      latitude,
+      longitude,
+      name,
+      address,
+    });
+    res.json({ status: 'success', data });
+  } catch (e) {
+    sendEvolutionError(res, e);
+  }
+});
+
+/** POST /groups/:groupJid/send-poll — body: name (pergunta), values[] (opções), selectableCount? */
+router.post('/:groupJid/send-poll', async (req, res) => {
+  try {
+    const instanceName = instanceNameFrom(req);
+    const groupJid = decodeURIComponent(req.params.groupJid);
+    const { name, values, selectableCount } = req.body as {
+      name?: string;
+      values?: string[];
+      selectableCount?: number;
+    };
+    if (!instanceName || !groupJid || !name?.trim() || !Array.isArray(values)) {
+      res.status(400).json({ status: 'error', message: 'instanceName, groupJid, name e values são obrigatórios.' });
+      return;
+    }
+    const opts = values.map((v) => String(v ?? '').trim()).filter(Boolean);
+    if (opts.length < 2) {
+      res.status(400).json({ status: 'error', message: 'A enquete precisa de pelo menos duas opções.' });
+      return;
+    }
+    const data = await Evo.sendGroupPoll(instanceName, groupJid, {
+      name: name.trim(),
+      values: opts,
+      selectableCount,
+    });
+    res.json({ status: 'success', data });
+  } catch (e) {
+    sendEvolutionError(res, e);
+  }
+});
+
+/** POST /groups/:groupJid/send-contact — body: contact[] (fullName, wuid, phoneNumber, organization?, email?, url?) */
+router.post('/:groupJid/send-contact', async (req, res) => {
+  try {
+    const instanceName = instanceNameFrom(req);
+    const groupJid = decodeURIComponent(req.params.groupJid);
+    const { contact } = req.body as { contact?: Evo.GroupSendContactEntry[] };
+    if (!instanceName || !groupJid || !Array.isArray(contact) || !contact.length) {
+      res.status(400).json({ status: 'error', message: 'instanceName, groupJid e contact (array) são obrigatórios.' });
+      return;
+    }
+    const data = await Evo.sendGroupContact(instanceName, groupJid, contact);
+    res.json({ status: 'success', data });
+  } catch (e) {
+    sendEvolutionError(res, e);
+  }
+});
+
 /** GET /groups/:groupJid/invite?instanceName= */
 router.get('/:groupJid/invite', async (req, res) => {
   try {
