@@ -17,6 +17,24 @@ function sendEvolutionError(res: Response, err: unknown): void {
   res.status(status >= 400 && status < 600 ? status : 500).json({ status: 'error', message });
 }
 
+/** Evolution v2: participantes como array de strings só com DDI+número (ex.: 5511999999999), sem @. */
+function normalizeCreateGroupParticipants(input: unknown[]): string[] {
+  const out: string[] = [];
+  for (const raw of input) {
+    const s = String(raw ?? '').trim();
+    if (!s) continue;
+    if (s.includes('@g.us')) continue;
+    if (s.includes('@s.whatsapp.net') || s.includes('@c.us')) {
+      const digits = s.split('@')[0].replace(/\D/g, '');
+      if (digits.length >= 10 && digits.length <= 15) out.push(digits);
+      continue;
+    }
+    const digits = s.replace(/\D/g, '');
+    if (digits.length >= 10 && digits.length <= 15) out.push(digits);
+  }
+  return [...new Set(out)];
+}
+
 /** GET /groups?instanceName=&getParticipants= */
 router.get('/', async (req, res) => {
   try {
@@ -53,11 +71,26 @@ router.post('/', async (req, res) => {
       description?: string;
       participants?: string[];
     };
-    if (!subject || !Array.isArray(participants)) {
+    if (!subject?.trim() || !Array.isArray(participants)) {
       res.status(400).json({ status: 'error', message: 'subject e participants (array) são obrigatórios.' });
       return;
     }
-    const data = await Evo.createGroup(instanceName, { subject, description, participants });
+    const normalized = normalizeCreateGroupParticipants(participants);
+    if (!normalized.length) {
+      res.status(400).json({
+        status: 'error',
+        message:
+          'É necessário pelo menos um número válido em participants (formato internacional, ex.: 5511999999999). Linhas como "Nome, 5511999999999" ou só o número.',
+      });
+      return;
+    }
+    const payload: { subject: string; participants: string[]; description?: string } = {
+      subject: subject.trim(),
+      participants: normalized,
+    };
+    const desc = typeof description === 'string' ? description.trim() : '';
+    if (desc) payload.description = desc;
+    const data = await Evo.createGroup(instanceName, payload);
     res.status(201).json({ status: 'success', data });
   } catch (e) {
     sendEvolutionError(res, e);
@@ -220,9 +253,15 @@ router.post('/:groupJid/participant-updates', async (req, res) => {
       res.status(400).json({ status: 'error', message: 'action inválida (add|remove|promote|demote).' });
       return;
     }
+    const list =
+      action === 'add' ? normalizeCreateGroupParticipants(participants) : participants.map((p) => String(p).trim()).filter(Boolean);
+    if (!list.length) {
+      res.status(400).json({ status: 'error', message: 'participants não pode ser vazio.' });
+      return;
+    }
     const data = await Evo.updateParticipant(instanceName, groupJid, {
       action: action as 'add' | 'remove' | 'promote' | 'demote',
-      participants,
+      participants: list,
     });
     res.json({ status: 'success', data });
   } catch (e) {
