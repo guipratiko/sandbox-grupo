@@ -205,7 +205,14 @@ export async function sendGroupText(
 export async function sendGroupMedia(
   instanceName: string,
   groupJid: string,
-  body: { mediatype: 'image' | 'video' | 'document'; media: string; caption?: string; fileName?: string }
+  body: {
+    mediatype: 'image' | 'video' | 'document';
+    media: string;
+    caption?: string;
+    fileName?: string;
+    mentionsEveryOne?: boolean;
+    mimetype?: string;
+  }
 ): Promise<unknown> {
   const client = getClient();
   const payload: Record<string, unknown> = {
@@ -215,18 +222,28 @@ export async function sendGroupMedia(
     caption: body.caption?.trim() ? body.caption.trim() : '',
   };
   if (body.fileName?.trim()) payload.fileName = body.fileName.trim();
+  else if (body.mediatype === 'document') payload.fileName = 'arquivo';
+  if (body.mimetype?.trim()) payload.mimetype = body.mimetype.trim();
+  if (body.mentionsEveryOne === true) payload.mentionsEveryOne = true;
   const res = await client.post(`/message/sendMedia/${encodeURIComponent(instanceName)}`, payload);
   assertOk(res, 'sendGroupMedia');
   return res.data;
 }
 
 /** Áudio (PTT) no grupo — POST /message/sendWhatsAppAudio/:instance */
-export async function sendGroupWhatsAppAudio(instanceName: string, groupJid: string, audioUrl: string): Promise<unknown> {
+export async function sendGroupWhatsAppAudio(
+  instanceName: string,
+  groupJid: string,
+  audioUrl: string,
+  opts?: { mentionsEveryOne?: boolean }
+): Promise<unknown> {
   const client = getClient();
-  const res = await client.post(`/message/sendWhatsAppAudio/${encodeURIComponent(instanceName)}`, {
+  const payload: Record<string, unknown> = {
     number: groupJid,
     audio: audioUrl.trim(),
-  });
+  };
+  if (opts?.mentionsEveryOne === true) payload.mentionsEveryOne = true;
+  const res = await client.post(`/message/sendWhatsAppAudio/${encodeURIComponent(instanceName)}`, payload);
   assertOk(res, 'sendGroupWhatsAppAudio');
   return res.data;
 }

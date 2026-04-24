@@ -160,16 +160,18 @@ router.post('/:groupJid/send-text', async (req, res) => {
   }
 });
 
-/** POST /groups/:groupJid/send-media — body: mediatype image|video|document, media (URL), caption?, fileName? */
+/** POST /groups/:groupJid/send-media — body: mediatype image|video|document, media (URL), caption?, fileName?, mentionsEveryOne?, mimetype? */
 router.post('/:groupJid/send-media', async (req, res) => {
   try {
     const instanceName = instanceNameFrom(req);
     const groupJid = decodeURIComponent(req.params.groupJid);
-    const { mediatype, media, caption, fileName } = req.body as {
+    const { mediatype, media, caption, fileName, mentionsEveryOne, mimetype } = req.body as {
       mediatype?: string;
       media?: string;
       caption?: string;
       fileName?: string;
+      mentionsEveryOne?: boolean;
+      mimetype?: string;
     };
     if (!instanceName || !groupJid || !media?.trim()) {
       res.status(400).json({ status: 'error', message: 'instanceName, groupJid e media são obrigatórios.' });
@@ -185,6 +187,8 @@ router.post('/:groupJid/send-media', async (req, res) => {
       media: media.trim(),
       caption,
       fileName,
+      mentionsEveryOne: mentionsEveryOne === true,
+      mimetype,
     });
     res.json({ status: 'success', data });
   } catch (e) {
@@ -192,17 +196,19 @@ router.post('/:groupJid/send-media', async (req, res) => {
   }
 });
 
-/** POST /groups/:groupJid/send-audio — body: audio (URL ou base64 aceito pela Evolution) */
+/** POST /groups/:groupJid/send-audio — body: audio (URL ou base64 aceito pela Evolution), mentionsEveryOne? */
 router.post('/:groupJid/send-audio', async (req, res) => {
   try {
     const instanceName = instanceNameFrom(req);
     const groupJid = decodeURIComponent(req.params.groupJid);
-    const { audio } = req.body as { audio?: string };
+    const { audio, mentionsEveryOne } = req.body as { audio?: string; mentionsEveryOne?: boolean };
     if (!instanceName || !groupJid || !audio?.trim()) {
       res.status(400).json({ status: 'error', message: 'instanceName, groupJid e audio são obrigatórios.' });
       return;
     }
-    const data = await Evo.sendGroupWhatsAppAudio(instanceName, groupJid, audio.trim());
+    const data = await Evo.sendGroupWhatsAppAudio(instanceName, groupJid, audio.trim(), {
+      mentionsEveryOne: mentionsEveryOne === true,
+    });
     res.json({ status: 'success', data });
   } catch (e) {
     sendEvolutionError(res, e);
