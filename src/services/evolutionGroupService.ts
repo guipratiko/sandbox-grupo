@@ -1,5 +1,5 @@
 import type { AxiosResponse } from 'axios';
-import { createEvolutionGoClient, evolutionGoLocationLabels, goUnsupported } from '../utils/evolutionGoClient';
+import { createEvolutionGoClient, evolutionGoLocationLabels, goUnsupported } from '../integrations/whatsapp';
 
 function client(instanceToken: string) {
   return createEvolutionGoClient(instanceToken);
