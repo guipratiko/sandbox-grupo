@@ -1,25 +1,22 @@
-import type { AxiosInstance, AxiosResponse } from 'axios';
-import { createEvolutionClient } from './evolutionClient';
+import type { AxiosResponse } from 'axios';
+import { createEvolutionGoClient, evolutionGoLocationLabels, goUnsupported } from '../utils/evolutionGoClient';
 
-function getClient(): AxiosInstance {
-  const c = createEvolutionClient();
-  if (!c) {
-    const err = new Error('Evolution API não configurada (EVOLUTION_API_BASE_URL / EVOLUTION_API_KEY).') as Error & {
-      status?: number;
-    };
-    err.status = 503;
-    throw err;
-  }
-  return c;
+function client(instanceToken: string) {
+  return createEvolutionGoClient(instanceToken);
 }
 
 function evolutionMessage(res: AxiosResponse): string {
   const d = res.data;
-  if (d && typeof d === 'object' && 'message' in d && typeof (d as { message: unknown }).message === 'string') {
-    return (d as { message: string }).message;
+  if (d && typeof d === 'object') {
+    const o = d as Record<string, unknown>;
+    if (typeof o.error === 'string') return o.error;
+    if (o.error && typeof o.error === 'object' && typeof (o.error as { message?: string }).message === 'string') {
+      return (o.error as { message: string }).message;
+    }
+    if (typeof o.message === 'string') return o.message;
   }
   if (typeof d === 'string') return d.slice(0, 500);
-  return res.statusText || 'Erro na Evolution API';
+  return res.statusText || 'Erro na Evolution GO';
 }
 
 function assertOk(res: AxiosResponse, context: string): void {
@@ -30,180 +27,152 @@ function assertOk(res: AxiosResponse, context: string): void {
   }
 }
 
-/** Lista todos os grupos da instância (Evolution v2). */
-export async function fetchAllGroups(instanceName: string, getParticipants: boolean): Promise<unknown> {
-  const client = getClient();
-  const path = `/group/fetchAllGroups/${encodeURIComponent(instanceName)}?getParticipants=${getParticipants ? 'true' : 'false'}`;
-  const res = await client.get(path);
+/** GET /group/list — lista grupos (participantes vêm no payload quando a GO os inclui). */
+export async function fetchAllGroups(
+  instanceToken: string,
+  _getParticipants: boolean
+): Promise<unknown> {
+  const res = await client(instanceToken).get('/group/list');
   assertOk(res, 'fetchAllGroups');
   return res.data;
 }
 
-export async function findGroupInfos(instanceName: string, groupJid: string): Promise<unknown> {
-  const client = getClient();
-  const res = await client.get(
-    `/group/findGroupInfos/${encodeURIComponent(instanceName)}?groupJid=${encodeURIComponent(groupJid)}`
-  );
+export async function findGroupInfos(instanceToken: string, groupJid: string): Promise<unknown> {
+  const res = await client(instanceToken).post('/group/info', { groupJid });
   assertOk(res, 'findGroupInfos');
   return res.data;
 }
 
-export async function fetchParticipants(instanceName: string, groupJid: string): Promise<unknown> {
-  const client = getClient();
-  const res = await client.get(
-    `/group/participants/${encodeURIComponent(instanceName)}?groupJid=${encodeURIComponent(groupJid)}`
-  );
-  assertOk(res, 'participants');
-  return res.data;
+export async function fetchParticipants(instanceToken: string, groupJid: string): Promise<unknown> {
+  const info = await findGroupInfos(instanceToken, groupJid);
+  const row = (info as { data?: Record<string, unknown> })?.data ?? info;
+  if (row && typeof row === 'object' && Array.isArray((row as { Participants?: unknown }).Participants)) {
+    return (row as { Participants: unknown }).Participants;
+  }
+  return [];
 }
 
-export async function inviteCode(instanceName: string, groupJid: string): Promise<unknown> {
-  const client = getClient();
-  const res = await client.get(
-    `/group/inviteCode/${encodeURIComponent(instanceName)}?groupJid=${encodeURIComponent(groupJid)}`
-  );
+export async function inviteCode(instanceToken: string, groupJid: string): Promise<unknown> {
+  const res = await client(instanceToken).post('/group/invitelink', { groupJid });
   assertOk(res, 'inviteCode');
   return res.data;
 }
 
 export async function createGroup(
-  instanceName: string,
+  instanceToken: string,
   body: { subject: string; description?: string; participants: string[] }
 ): Promise<unknown> {
-  const client = getClient();
-  const res = await client.post(`/group/create/${encodeURIComponent(instanceName)}`, body);
+  const res = await client(instanceToken).post('/group/create', {
+    groupName: body.subject,
+    participants: body.participants,
+  });
   assertOk(res, 'createGroup');
   return res.data;
 }
 
-export async function updateGroupSubject(instanceName: string, groupJid: string, subject: string): Promise<unknown> {
-  const client = getClient();
-  const res = await client.post(
-    `/group/updateGroupSubject/${encodeURIComponent(instanceName)}?groupJid=${encodeURIComponent(groupJid)}`,
-    { subject }
-  );
+export async function updateGroupSubject(
+  instanceToken: string,
+  groupJid: string,
+  subject: string
+): Promise<unknown> {
+  const res = await client(instanceToken).post('/group/name', { groupJid, name: subject });
   assertOk(res, 'updateGroupSubject');
   return res.data;
 }
 
 export async function updateGroupDescription(
-  instanceName: string,
-  groupJid: string,
-  description: string
+  _instanceToken: string,
+  _groupJid: string,
+  _description: string
 ): Promise<unknown> {
-  const client = getClient();
-  const res = await client.post(
-    `/group/updateGroupDescription/${encodeURIComponent(instanceName)}?groupJid=${encodeURIComponent(groupJid)}`,
-    { description }
-  );
-  assertOk(res, 'updateGroupDescription');
-  return res.data;
+  return goUnsupported('Alteração de descrição do grupo');
 }
 
-/**
- * A Evolution (Baileys) usa `isBase64()` do class-validator: `data:image/...;base64,...`
- * não é aceito como base64 e cai em erro interno (500). Aqui enviamos URL http(s) ou só o payload base64.
- */
-function normalizeImageForEvolutionGroupPicture(image: string): string {
+function normalizeImageForGroupPicture(image: string): string {
   const s = String(image ?? '').trim();
   if (!s) return s;
   const dataUrl = /^data:[^;]+;base64,(.+)$/is.exec(s);
-  if (dataUrl?.[1]) {
-    return dataUrl[1].replace(/\s/g, '');
-  }
-  if (/^https?:\/\//i.test(s)) {
-    return s;
-  }
+  if (dataUrl?.[1]) return dataUrl[1].replace(/\s/g, '');
+  if (/^https?:\/\//i.test(s)) return s;
   return s.replace(/\s/g, '');
 }
 
-export async function updateGroupPicture(instanceName: string, groupJid: string, image: string): Promise<unknown> {
-  const client = getClient();
-  const normalized = normalizeImageForEvolutionGroupPicture(image);
-  const res = await client.post(
-    `/group/updateGroupPicture/${encodeURIComponent(instanceName)}?groupJid=${encodeURIComponent(groupJid)}`,
-    { groupJid, image: normalized }
-  );
+export async function updateGroupPicture(
+  instanceToken: string,
+  groupJid: string,
+  image: string
+): Promise<unknown> {
+  const res = await client(instanceToken).post('/group/photo', {
+    groupJid,
+    image: normalizeImageForGroupPicture(image),
+  });
   assertOk(res, 'updateGroupPicture');
   return res.data;
 }
 
 export async function sendInvite(
-  instanceName: string,
+  instanceToken: string,
   body: { groupJid: string; description: string; numbers: string[] }
 ): Promise<unknown> {
-  const client = getClient();
-  const res = await client.post(`/group/sendInvite/${encodeURIComponent(instanceName)}`, body);
+  const res = await client(instanceToken).post('/group/participant', {
+    groupJid: body.groupJid,
+    action: 'add',
+    participants: body.numbers.map((n) => n.replace(/\D/g, '')).filter(Boolean),
+  });
   assertOk(res, 'sendInvite');
   return res.data;
 }
 
 export async function updateParticipant(
-  instanceName: string,
+  instanceToken: string,
   groupJid: string,
   body: { action: 'add' | 'remove' | 'promote' | 'demote'; participants: string[] }
 ): Promise<unknown> {
-  const client = getClient();
-  const res = await client.post(
-    `/group/updateParticipant/${encodeURIComponent(instanceName)}?groupJid=${encodeURIComponent(groupJid)}`,
-    body
-  );
+  const res = await client(instanceToken).post('/group/participant', {
+    groupJid,
+    action: body.action,
+    participants: body.participants.map((n) => n.replace(/\D/g, '')).filter(Boolean),
+  });
   assertOk(res, 'updateParticipant');
   return res.data;
 }
 
 export async function updateSetting(
-  instanceName: string,
-  groupJid: string,
-  body: { action: 'announcement' | 'not_announcement' | 'locked' | 'unlocked' }
+  _instanceToken: string,
+  _groupJid: string,
+  _body: { action: 'announcement' | 'not_announcement' | 'locked' | 'unlocked' }
 ): Promise<unknown> {
-  const client = getClient();
-  const res = await client.post(
-    `/group/updateSetting/${encodeURIComponent(instanceName)}?groupJid=${encodeURIComponent(groupJid)}`,
-    body
-  );
-  assertOk(res, 'updateSetting');
-  return res.data;
+  return goUnsupported('Configurações de anúncio/bloqueio do grupo');
 }
 
-export async function toggleEphemeral(instanceName: string, groupJid: string, expiration: number): Promise<unknown> {
-  const client = getClient();
-  const res = await client.post(
-    `/group/toggleEphemeral/${encodeURIComponent(instanceName)}?groupJid=${encodeURIComponent(groupJid)}`,
-    { expiration }
-  );
-  assertOk(res, 'toggleEphemeral');
-  return res.data;
+export async function toggleEphemeral(
+  _instanceToken: string,
+  _groupJid: string,
+  _expiration: number
+): Promise<unknown> {
+  return goUnsupported('Mensagens temporárias no grupo');
 }
 
-export async function leaveGroup(instanceName: string, groupJid: string): Promise<unknown> {
-  const client = getClient();
-  const res = await client.delete(
-    `/group/leaveGroup/${encodeURIComponent(instanceName)}?groupJid=${encodeURIComponent(groupJid)}`
-  );
-  assertOk(res, 'leaveGroup');
-  return res.data;
+export async function leaveGroup(_instanceToken: string, _groupJid: string): Promise<unknown> {
+  return goUnsupported('Sair do grupo');
 }
 
-/** Texto no grupo (ex.: mencionar todos). Evolution: POST /message/sendText/:instance */
 export async function sendGroupText(
-  instanceName: string,
+  instanceToken: string,
   groupJid: string,
   body: { text: string; mentionsEveryOne?: boolean }
 ): Promise<unknown> {
-  const client = getClient();
-  const res = await client.post(`/message/sendText/${encodeURIComponent(instanceName)}`, {
+  const res = await client(instanceToken).post('/send/text', {
     number: groupJid,
     text: body.text,
-    mentionsEveryOne: body.mentionsEveryOne === true,
+    ...(body.mentionsEveryOne === true ? { mentionAll: true } : {}),
   });
   assertOk(res, 'sendGroupText');
   return res.data;
 }
 
-/** Imagem / vídeo / documento no grupo — POST /message/sendMedia/:instance */
 export async function sendGroupMedia(
-  instanceName: string,
+  instanceToken: string,
   groupJid: string,
   body: {
     mediatype: 'image' | 'video' | 'document';
@@ -214,70 +183,64 @@ export async function sendGroupMedia(
     mimetype?: string;
   }
 ): Promise<unknown> {
-  const client = getClient();
   const payload: Record<string, unknown> = {
     number: groupJid,
-    mediatype: body.mediatype,
-    media: body.media,
-    caption: body.caption?.trim() ? body.caption.trim() : '',
+    type: body.mediatype,
+    url: body.media,
+    ...(body.caption?.trim() ? { caption: body.caption.trim() } : {}),
+    ...(body.mediatype === 'document'
+      ? { filename: body.fileName?.trim() || 'arquivo' }
+      : {}),
+    ...(body.mentionsEveryOne === true ? { mentionAll: true } : {}),
   };
-  if (body.fileName?.trim()) payload.fileName = body.fileName.trim();
-  else if (body.mediatype === 'document') payload.fileName = 'arquivo';
-  if (body.mimetype?.trim()) payload.mimetype = body.mimetype.trim();
-  if (body.mentionsEveryOne === true) payload.mentionsEveryOne = true;
-  const res = await client.post(`/message/sendMedia/${encodeURIComponent(instanceName)}`, payload);
+  const res = await client(instanceToken).post('/send/media', payload);
   assertOk(res, 'sendGroupMedia');
   return res.data;
 }
 
-/** Áudio (PTT) no grupo — POST /message/sendWhatsAppAudio/:instance */
 export async function sendGroupWhatsAppAudio(
-  instanceName: string,
+  instanceToken: string,
   groupJid: string,
   audioUrl: string,
   opts?: { mentionsEveryOne?: boolean }
 ): Promise<unknown> {
-  const client = getClient();
-  const payload: Record<string, unknown> = {
+  const res = await client(instanceToken).post('/send/media', {
     number: groupJid,
-    audio: audioUrl.trim(),
-  };
-  if (opts?.mentionsEveryOne === true) payload.mentionsEveryOne = true;
-  const res = await client.post(`/message/sendWhatsAppAudio/${encodeURIComponent(instanceName)}`, payload);
+    type: 'audio',
+    url: audioUrl.trim(),
+    ...(opts?.mentionsEveryOne === true ? { mentionAll: true } : {}),
+  });
   assertOk(res, 'sendGroupWhatsAppAudio');
   return res.data;
 }
 
-/** Localização no grupo — POST /message/sendLocation/:instance */
 export async function sendGroupLocation(
-  instanceName: string,
+  instanceToken: string,
   groupJid: string,
   body: { latitude: number; longitude: number; name?: string; address?: string }
 ): Promise<unknown> {
-  const client = getClient();
-  const res = await client.post(`/message/sendLocation/${encodeURIComponent(instanceName)}`, {
+  const labels = evolutionGoLocationLabels(body.latitude, body.longitude, body.name, body.address);
+  const res = await client(instanceToken).post('/send/location', {
     number: groupJid,
-    name: body.name?.trim() || '',
-    address: body.address?.trim() || '',
     latitude: body.latitude,
     longitude: body.longitude,
+    name: labels.name,
+    address: labels.address,
   });
   assertOk(res, 'sendGroupLocation');
   return res.data;
 }
 
-/** Enquete no grupo — POST /message/sendPoll/:instance */
 export async function sendGroupPoll(
-  instanceName: string,
+  instanceToken: string,
   groupJid: string,
   body: { name: string; values: string[]; selectableCount?: number }
 ): Promise<unknown> {
-  const client = getClient();
-  const res = await client.post(`/message/sendPoll/${encodeURIComponent(instanceName)}`, {
+  const res = await client(instanceToken).post('/send/poll', {
     number: groupJid,
-    name: body.name.trim(),
-    values: body.values.map((v) => v.trim()).filter(Boolean),
-    selectableCount: typeof body.selectableCount === 'number' && body.selectableCount > 0 ? body.selectableCount : 1,
+    question: body.name.trim(),
+    options: body.values.map((v) => v.trim()).filter(Boolean),
+    maxAnswer: typeof body.selectableCount === 'number' && body.selectableCount > 0 ? body.selectableCount : 1,
   });
   assertOk(res, 'sendGroupPoll');
   return res.data;
@@ -286,25 +249,24 @@ export async function sendGroupPoll(
 export type GroupSendContactEntry = {
   fullName: string;
   wuid: string;
-  phoneNumber: string;
+  phone: string;
   organization?: string;
-  email?: string;
-  url?: string;
 };
 
-/** Cartão de contato no grupo — POST /message/sendContact/:instance */
-export async function sendGroupContact(instanceName: string, groupJid: string, contact: GroupSendContactEntry[]): Promise<unknown> {
-  const client = getClient();
-  const res = await client.post(`/message/sendContact/${encodeURIComponent(instanceName)}`, {
+export async function sendGroupContact(
+  instanceToken: string,
+  groupJid: string,
+  contact: GroupSendContactEntry[]
+): Promise<unknown> {
+  const card = contact[0];
+  if (!card) throw new Error('contact vazio');
+  const res = await client(instanceToken).post('/send/contact', {
     number: groupJid,
-    contact: contact.map((c) => ({
-      fullName: c.fullName.trim(),
-      wuid: String(c.wuid).replace(/\D/g, ''),
-      phoneNumber: c.phoneNumber.trim(),
-      organization: (c.organization ?? '').trim(),
-      email: (c.email ?? '').trim(),
-      url: (c.url ?? '').trim(),
-    })),
+    vcard: {
+      fullName: card.fullName.trim(),
+      phone: card.wuid.replace(/\D/g, '') || card.phone.replace(/\D/g, ''),
+      organization: (card.organization ?? '').trim(),
+    },
   });
   assertOk(res, 'sendGroupContact');
   return res.data;
