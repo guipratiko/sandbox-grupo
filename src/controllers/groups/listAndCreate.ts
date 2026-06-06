@@ -53,5 +53,22 @@ export const createGroup = asyncGroupHandler(async (req, res) => {
   if (desc) payload.description = desc;
 
   const data = await Evo.createGroup(instanceToken, payload);
+  if (desc) {
+    const created = data as Record<string, unknown>;
+    const inner =
+      created?.data && typeof created.data === 'object'
+        ? (created.data as Record<string, unknown>)
+        : created;
+    const jid = String(
+      inner?.JID ?? inner?.jid ?? inner?.id ?? inner?.groupJid ?? ''
+    ).trim();
+    if (jid) {
+      try {
+        await Evo.updateGroupDescription(instanceToken, jid, desc);
+      } catch (e) {
+        console.warn('[Grupo-Flow] createGroup: descrição não aplicada:', e);
+      }
+    }
+  }
   jsonSuccess(res, data, 201);
 });

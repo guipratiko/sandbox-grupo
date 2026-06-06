@@ -1,7 +1,7 @@
 {
   "name": "grupo-flow",
   "version": "2.0.0",
-  "description": "Microserviço OnlyFlow — operações de grupos WhatsApp via Evolution API",
+  "description": "Microserviço OnlyFlow — operações de grupos WhatsApp via Evolution GO",
   "main": "dist/server.js",
   "scripts": {
     "start": "node dist/server.js",

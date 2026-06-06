@@ -1,30 +1,18 @@
 import type { AxiosResponse } from 'axios';
 import { createEvolutionGoClient, evolutionGoLocationLabels, goUnsupported } from '../integrations/whatsapp';
+import { assertGoResponse } from '../utils/goResponse';
+import {
+  extractParticipantsFromGroupInfo,
+  ensureGroupJid,
+  normalizeGoGroupInfo,
+} from '../utils/groupListParser';
 
 function client(instanceToken: string) {
   return createEvolutionGoClient(instanceToken);
 }
 
-function evolutionMessage(res: AxiosResponse): string {
-  const d = res.data;
-  if (d && typeof d === 'object') {
-    const o = d as Record<string, unknown>;
-    if (typeof o.error === 'string') return o.error;
-    if (o.error && typeof o.error === 'object' && typeof (o.error as { message?: string }).message === 'string') {
-      return (o.error as { message: string }).message;
-    }
-    if (typeof o.message === 'string') return o.message;
-  }
-  if (typeof d === 'string') return d.slice(0, 500);
-  return res.statusText || 'Erro na Evolution GO';
-}
-
 function assertOk(res: AxiosResponse, context: string): void {
-  if (res.status >= 400) {
-    const err = new Error(`${context}: ${evolutionMessage(res)}`) as Error & { status?: number };
-    err.status = res.status;
-    throw err;
-  }
+  assertGoResponse(res, context);
 }
 
 /** GET /group/list — lista grupos (participantes vêm no payload quando a GO os inclui). */
@@ -38,22 +26,25 @@ export async function fetchAllGroups(
 }
 
 export async function findGroupInfos(instanceToken: string, groupJid: string): Promise<unknown> {
-  const res = await client(instanceToken).post('/group/info', { groupJid });
+  const jid = ensureGroupJid(groupJid);
+  const res = await client(instanceToken).post('/group/info', { groupJid: jid });
   assertOk(res, 'findGroupInfos');
-  return res.data;
+  return normalizeGoGroupInfo(res.data);
 }
 
 export async function fetchParticipants(instanceToken: string, groupJid: string): Promise<unknown> {
-  const info = await findGroupInfos(instanceToken, groupJid);
-  const row = (info as { data?: Record<string, unknown> })?.data ?? info;
-  if (row && typeof row === 'object' && Array.isArray((row as { Participants?: unknown }).Participants)) {
-    return (row as { Participants: unknown }).Participants;
-  }
-  return [];
+  const info = await client(instanceToken).post('/group/info', {
+    groupJid: ensureGroupJid(groupJid),
+  });
+  assertOk(info, 'fetchParticipants');
+  return extractParticipantsFromGroupInfo(info.data);
 }
 
 export async function inviteCode(instanceToken: string, groupJid: string): Promise<unknown> {
-  const res = await client(instanceToken).post('/group/invitelink', { groupJid });
+  const res = await client(instanceToken).post('/group/invitelink', {
+    groupJid: ensureGroupJid(groupJid),
+    reset: false,
+  });
   assertOk(res, 'inviteCode');
   return res.data;
 }
@@ -75,17 +66,25 @@ export async function updateGroupSubject(
   groupJid: string,
   subject: string
 ): Promise<unknown> {
-  const res = await client(instanceToken).post('/group/name', { groupJid, name: subject });
+  const res = await client(instanceToken).post('/group/name', {
+    groupJid: ensureGroupJid(groupJid),
+    name: subject,
+  });
   assertOk(res, 'updateGroupSubject');
   return res.data;
 }
 
 export async function updateGroupDescription(
-  _instanceToken: string,
-  _groupJid: string,
-  _description: string
+  instanceToken: string,
+  groupJid: string,
+  description: string
 ): Promise<unknown> {
-  return goUnsupported('Alteração de descrição do grupo');
+  const res = await client(instanceToken).post('/group/description', {
+    groupJid: ensureGroupJid(groupJid),
+    description,
+  });
+  assertOk(res, 'updateGroupDescription');
+  return res.data;
 }
 
 function normalizeImageForGroupPicture(image: string): string {
@@ -103,7 +102,7 @@ export async function updateGroupPicture(
   image: string
 ): Promise<unknown> {
   const res = await client(instanceToken).post('/group/photo', {
-    groupJid,
+    groupJid: ensureGroupJid(groupJid),
     image: normalizeImageForGroupPicture(image),
   });
   assertOk(res, 'updateGroupPicture');
@@ -115,7 +114,7 @@ export async function sendInvite(
   body: { groupJid: string; description: string; numbers: string[] }
 ): Promise<unknown> {
   const res = await client(instanceToken).post('/group/participant', {
-    groupJid: body.groupJid,
+    groupJid: ensureGroupJid(body.groupJid),
     action: 'add',
     participants: body.numbers.map((n) => n.replace(/\D/g, '')).filter(Boolean),
   });
@@ -129,7 +128,7 @@ export async function updateParticipant(
   body: { action: 'add' | 'remove' | 'promote' | 'demote'; participants: string[] }
 ): Promise<unknown> {
   const res = await client(instanceToken).post('/group/participant', {
-    groupJid,
+    groupJid: ensureGroupJid(groupJid),
     action: body.action,
     participants: body.participants.map((n) => n.replace(/\D/g, '')).filter(Boolean),
   });
@@ -138,11 +137,16 @@ export async function updateParticipant(
 }
 
 export async function updateSetting(
-  _instanceToken: string,
-  _groupJid: string,
-  _body: { action: 'announcement' | 'not_announcement' | 'locked' | 'unlocked' }
+  instanceToken: string,
+  groupJid: string,
+  body: { action: 'announcement' | 'not_announcement' | 'locked' | 'unlocked' }
 ): Promise<unknown> {
-  return goUnsupported('Configurações de anúncio/bloqueio do grupo');
+  const res = await client(instanceToken).post('/group/settings', {
+    groupJid: ensureGroupJid(groupJid),
+    action: body.action,
+  });
+  assertOk(res, 'updateSetting');
+  return res.data;
 }
 
 export async function toggleEphemeral(
@@ -153,8 +157,12 @@ export async function toggleEphemeral(
   return goUnsupported('Mensagens temporárias no grupo');
 }
 
-export async function leaveGroup(_instanceToken: string, _groupJid: string): Promise<unknown> {
-  return goUnsupported('Sair do grupo');
+export async function leaveGroup(instanceToken: string, groupJid: string): Promise<unknown> {
+  const res = await client(instanceToken).post('/group/leave', {
+    groupJid: ensureGroupJid(groupJid),
+  });
+  assertOk(res, 'leaveGroup');
+  return res.data;
 }
 
 export async function sendGroupText(
@@ -163,7 +171,7 @@ export async function sendGroupText(
   body: { text: string; mentionsEveryOne?: boolean }
 ): Promise<unknown> {
   const res = await client(instanceToken).post('/send/text', {
-    number: groupJid,
+    number: ensureGroupJid(groupJid),
     text: body.text,
     ...(body.mentionsEveryOne === true ? { mentionAll: true } : {}),
   });
@@ -184,7 +192,7 @@ export async function sendGroupMedia(
   }
 ): Promise<unknown> {
   const payload: Record<string, unknown> = {
-    number: groupJid,
+    number: ensureGroupJid(groupJid),
     type: body.mediatype,
     url: body.media,
     ...(body.caption?.trim() ? { caption: body.caption.trim() } : {}),
@@ -205,7 +213,7 @@ export async function sendGroupWhatsAppAudio(
   opts?: { mentionsEveryOne?: boolean }
 ): Promise<unknown> {
   const res = await client(instanceToken).post('/send/media', {
-    number: groupJid,
+    number: ensureGroupJid(groupJid),
     type: 'audio',
     url: audioUrl.trim(),
     ...(opts?.mentionsEveryOne === true ? { mentionAll: true } : {}),
@@ -221,7 +229,7 @@ export async function sendGroupLocation(
 ): Promise<unknown> {
   const labels = evolutionGoLocationLabels(body.latitude, body.longitude, body.name, body.address);
   const res = await client(instanceToken).post('/send/location', {
-    number: groupJid,
+    number: ensureGroupJid(groupJid),
     latitude: body.latitude,
     longitude: body.longitude,
     name: labels.name,
@@ -237,7 +245,7 @@ export async function sendGroupPoll(
   body: { name: string; values: string[]; selectableCount?: number }
 ): Promise<unknown> {
   const res = await client(instanceToken).post('/send/poll', {
-    number: groupJid,
+    number: ensureGroupJid(groupJid),
     question: body.name.trim(),
     options: body.values.map((v) => v.trim()).filter(Boolean),
     maxAnswer: typeof body.selectableCount === 'number' && body.selectableCount > 0 ? body.selectableCount : 1,
@@ -261,7 +269,7 @@ export async function sendGroupContact(
   const card = contact[0];
   if (!card) throw new Error('contact vazio');
   const res = await client(instanceToken).post('/send/contact', {
-    number: groupJid,
+    number: ensureGroupJid(groupJid),
     vcard: {
       fullName: card.fullName.trim(),
       phone: card.wuid.replace(/\D/g, '') || card.phone.replace(/\D/g, ''),
