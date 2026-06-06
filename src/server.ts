@@ -4,6 +4,7 @@ import { grupoFlowCors } from './middleware/cors';
 import healthRoutes from './routes/health';
 import groupsRoutes from './controllers/groups/router';
 import internalRoutes from './routes/internal';
+import { getCapabilities } from './controllers/capabilities';
 import { errorHandler } from './middleware/errorHandler';
 
 const app = express();
@@ -12,6 +13,7 @@ app.use(express.json({ limit: '10mb' }));
 app.use(grupoFlowCors);
 
 const grupoFlowApi = Router();
+grupoFlowApi.get('/capabilities', getCapabilities);
 grupoFlowApi.use('/groups', groupsRoutes);
 grupoFlowApi.use('/internal', internalRoutes);
 

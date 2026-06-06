@@ -14,6 +14,10 @@ import {
 /** Após 404 na GO, não tenta de novo até reiniciar o serviço. */
 let groupSettingsGoRouteAvailable: boolean | null = null;
 
+export function isGroupSettingsRouteKnownUnavailable(): boolean {
+  return groupSettingsGoRouteAvailable === false;
+}
+
 function client(instanceToken: string) {
   return createEvolutionGoClient(instanceToken);
 }
