@@ -6,6 +6,13 @@ import {
   ensureGroupJid,
   normalizeGoGroupInfo,
 } from '../utils/groupListParser';
+import {
+  GO_GROUP_SETTINGS_SKIPPED,
+  isGroupSettingsSkippedPayload,
+} from '../utils/groupSettingsUnsupported';
+
+/** Após 404 na GO, não tenta de novo até reiniciar o serviço. */
+let groupSettingsGoRouteAvailable: boolean | null = null;
 
 function client(instanceToken: string) {
   return createEvolutionGoClient(instanceToken);
@@ -136,30 +143,37 @@ export async function updateParticipant(
   return res.data;
 }
 
-const GO_GROUP_SETTINGS_MSG =
-  'Configurações de grupo (anúncio/bloqueio) não estão disponíveis nesta versão da Evolution GO. Atualize o servidor Evolution GO.';
-
-function throwGroupSettingsUnsupported(): never {
-  const err = new Error(GO_GROUP_SETTINGS_MSG) as Error & { status?: number; code?: string };
-  err.status = 501;
-  err.code = 'GO_GROUP_SETTINGS_UNSUPPORTED';
-  throw err;
-}
-
 export async function updateSetting(
   instanceToken: string,
   groupJid: string,
   body: { action: 'announcement' | 'not_announcement' | 'locked' | 'unlocked' }
 ): Promise<unknown> {
+  if (process.env.EVOLUTION_GROUP_SETTINGS_ENABLED === 'false') {
+    return GO_GROUP_SETTINGS_SKIPPED;
+  }
+  if (groupSettingsGoRouteAvailable === false) {
+    return GO_GROUP_SETTINGS_SKIPPED;
+  }
+
   const res = await client(instanceToken).post('/group/settings', {
     groupJid: ensureGroupJid(groupJid),
     action: body.action,
   });
+
   if (res.status === 404) {
-    throwGroupSettingsUnsupported();
+    groupSettingsGoRouteAvailable = false;
+    console.warn('[Grupo-Flow] Evolution GO sem POST /group/settings — anúncio/bloqueio ignorados.');
+    return GO_GROUP_SETTINGS_SKIPPED;
   }
+
   assertOk(res, 'updateSetting');
-  return res.data;
+  groupSettingsGoRouteAvailable = true;
+  const data = res.data;
+  if (isGroupSettingsSkippedPayload(data)) {
+    groupSettingsGoRouteAvailable = false;
+    return GO_GROUP_SETTINGS_SKIPPED;
+  }
+  return data;
 }
 
 export async function toggleEphemeral(
