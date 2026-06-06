@@ -1,20 +1,26 @@
-import { isGroupSettingsRouteKnownUnavailable } from '../services/evolutionGroupService';
+import { EVOLUTION_CONFIG } from '../config/constants';
+import { probeEvolutionGroupSettingsRoute } from './groupSettingsProbe';
 
 export type GroupSettingsCapabilityReason =
   | 'disabled_by_config'
   | 'evolution_go_route_missing'
   | null;
 
-/** Indica se o Grupo-Flow tentará POST /group/settings na Evolution GO. */
-export function getGroupSettingsCapability(): {
+export async function resolveGroupSettingsCapability(): Promise<{
   available: boolean;
   reason: GroupSettingsCapabilityReason;
-} {
+  evolutionHost: string | null;
+}> {
+  const evolutionHost = EVOLUTION_CONFIG.BASE_URL || null;
+
   if (process.env.EVOLUTION_GROUP_SETTINGS_ENABLED === 'false') {
-    return { available: false, reason: 'disabled_by_config' };
+    return { available: false, reason: 'disabled_by_config', evolutionHost };
   }
-  if (isGroupSettingsRouteKnownUnavailable()) {
-    return { available: false, reason: 'evolution_go_route_missing' };
-  }
-  return { available: true, reason: null };
+
+  const available = await probeEvolutionGroupSettingsRoute();
+  return {
+    available,
+    reason: available ? null : 'evolution_go_route_missing',
+    evolutionHost,
+  };
 }

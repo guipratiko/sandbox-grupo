@@ -1,12 +1,15 @@
 import type { Request, Response } from 'express';
-import { getGroupSettingsCapability } from '../utils/groupSettingsCapability';
+import { resolveGroupSettingsCapability } from '../utils/groupSettingsCapability';
 import { jsonSuccess } from '../utils/httpResponses';
+import { asyncGroupHandler } from '../utils/groupRequest';
 
-/** GET /api/grupo-flow/capabilities — recursos opcionais da Evolution GO. */
-export function getCapabilities(_req: Request, res: Response): void {
-  const groupSettings = getGroupSettingsCapability();
+/** GET /api/grupo-flow/capabilities — sonda a Evolution GO e reporta recursos opcionais. */
+export const getCapabilities = asyncGroupHandler(async (_req, res) => {
+  const cap = await resolveGroupSettingsCapability();
   jsonSuccess(res, {
-    groupSettings: groupSettings.available,
-    groupSettingsReason: groupSettings.reason,
+    groupSettings: cap.available,
+    groupSettingsReason: cap.reason,
+    evolutionHost: cap.evolutionHost,
+    groupSettingsEnabled: process.env.EVOLUTION_GROUP_SETTINGS_ENABLED !== 'false',
   });
-}
+});

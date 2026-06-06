@@ -18,6 +18,10 @@ export function isGroupSettingsRouteKnownUnavailable(): boolean {
   return groupSettingsGoRouteAvailable === false;
 }
 
+export function setGroupSettingsRouteAvailability(available: boolean): void {
+  groupSettingsGoRouteAvailable = available;
+}
+
 function client(instanceToken: string) {
   return createEvolutionGoClient(instanceToken);
 }
