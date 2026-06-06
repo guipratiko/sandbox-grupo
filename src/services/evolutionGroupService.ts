@@ -136,6 +136,16 @@ export async function updateParticipant(
   return res.data;
 }
 
+const GO_GROUP_SETTINGS_MSG =
+  'Configurações de grupo (anúncio/bloqueio) não estão disponíveis nesta versão da Evolution GO. Atualize o servidor Evolution GO.';
+
+function throwGroupSettingsUnsupported(): never {
+  const err = new Error(GO_GROUP_SETTINGS_MSG) as Error & { status?: number; code?: string };
+  err.status = 501;
+  err.code = 'GO_GROUP_SETTINGS_UNSUPPORTED';
+  throw err;
+}
+
 export async function updateSetting(
   instanceToken: string,
   groupJid: string,
@@ -145,6 +155,9 @@ export async function updateSetting(
     groupJid: ensureGroupJid(groupJid),
     action: body.action,
   });
+  if (res.status === 404) {
+    throwGroupSettingsUnsupported();
+  }
   assertOk(res, 'updateSetting');
   return res.data;
 }
